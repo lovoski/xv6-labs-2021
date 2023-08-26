@@ -95,3 +95,17 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// fetch the trace_mask argument
+// store trace_mask in myproc() structure
+uint64
+sys_trace(void)
+{
+  int n;
+  if (argint(0, &n) < 0) {
+    return -1;
+  }
+  // set the trace_mask
+  myproc()->trace_mask = n;
+  return 0;
+}

@@ -104,6 +104,7 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
+extern uint64 sys_trace(void);
 
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -127,6 +128,32 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_trace]   sys_trace,
+};
+
+char *syscall_names[] = {
+  "fork",
+  "exit",
+  "wait",
+  "pipe",
+  "read",
+  "kill",
+  "exec",
+  "fstat",
+  "chdir",
+  "dup",
+  "getpid",
+  "sbrk",
+  "sleep",
+  "uptime",
+  "open",
+  "write",
+  "mknod",
+  "unlink",
+  "link",
+  "mkdir",
+  "close",
+  "trace",
 };
 
 void
@@ -135,9 +162,26 @@ syscall(void)
   int num;
   struct proc *p = myproc();
 
+  // num is the syscall number of syscall functions
+  // such as SYS_trace
   num = p->trapframe->a7;
+  // judge if the syscall number is out of range
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+    // call the corresponding syscall function from syscall list
+    // the return value of syscall is stored inside p->trapframe->a0
     p->trapframe->a0 = syscalls[num]();
+    // the p->trace_mask is -1 by default
+    // but when syscall trace is called, it is updated to the parameter
+    // of function trace, thus enable the information printing mechanism
+    int trace_mask = p->trace_mask;
+    // by default, trace_mask = 0 won't satify the condition
+    // thus no information will be printed by default
+    // only the syscall indicated in the mask will be printed
+    if (trace_mask > 0 && ((trace_mask>>num)%2 == 1)) {
+      // if the trace mask is in range
+      // print the information of the syscall
+      printf("%d: syscall %s -> %d\n", p->pid, syscall_names[num-1], p->trapframe->a0);
+    }
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);

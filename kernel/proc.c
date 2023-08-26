@@ -273,7 +273,9 @@ int
 fork(void)
 {
   int i, pid;
+  // child process
   struct proc *np;
+  // parent process
   struct proc *p = myproc();
 
   // Allocate process.
@@ -288,6 +290,9 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+
+  // copy parent trace_mask
+  np->trace_mask = p->trace_mask;
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
