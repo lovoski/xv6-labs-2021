@@ -60,6 +60,7 @@ void            ramdiskintr(void);
 void            ramdiskrw(struct buf*);
 
 // kalloc.c
+int             get_size_of_free_memory();
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
@@ -82,6 +83,7 @@ void            panic(char*) __attribute__((noreturn));
 void            printfinit(void);
 
 // proc.c
+int             get_num_of_free_proc();
 int             cpuid(void);
 void            exit(int);
 int             fork(void);

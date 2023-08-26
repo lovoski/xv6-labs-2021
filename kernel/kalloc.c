@@ -23,6 +23,22 @@ struct {
   struct run *freelist;
 } kmem;
 
+// return the num of free bytes
+int get_size_of_free_memory() {
+  // iterate along kmem
+  // find the number of free pages
+  // pagenum * 4096 is the result
+  int res = 0;
+  acquire(&kmem.lock);
+  struct run *p = kmem.freelist;
+  while (p) {
+    p = p->next;
+    res++;
+  }
+  release(&kmem.lock);
+  return res*PGSIZE;
+}
+
 void
 kinit()
 {
