@@ -26,6 +26,33 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
+#define PTES_PER_PAGE (PGSIZE/(sizeof(pte_t)))
+
+void vmprint_recursion(pagetable_t pgtbl, int level) {
+  // page table is an array filled with pte(page table entries)
+  if (level >= 3) {
+    // maximum level of page table is 3
+    return;
+  }
+  for (int i = 0; i < PTES_PER_PAGE; ++i) {
+    pte_t pte = pgtbl[i];
+    if (pte & PTE_V) {
+      // if the pte is valid
+      for (int j = 0;j < level; ++j) {
+        printf(".. ");
+      }
+      pagetable_t npgtbl = (pagetable_t)PTE2PA(pte);
+      printf("..%d: pte %p pa %p\n", i, pte, npgtbl);
+      vmprint_recursion(npgtbl, level+1);
+    }
+  }
+}
+
+void vmprint(pagetable_t pagetable) {
+  printf("page table %p\n", pagetable);
+  vmprint_recursion(pagetable, 0);
+}
+
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
@@ -127,6 +154,13 @@ found:
     return 0;
   }
 
+  // Alloc a usyscall page sharing across knel nd user 
+  if ((p->usyscall = (struct usyscall *)kalloc()) == 0) {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -141,6 +175,10 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // Initialize the pid inside usyscall
+  // The p->pid has been initialize at line 120
+  p->usyscall->pid = p->pid;
+
   return p;
 }
 
@@ -153,6 +191,10 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  // free usyscall space as trapframe
+  if (p->usyscall)
+    kfree((void *)p->usyscall);
+  p->usyscall = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -196,6 +238,15 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  // map usyscall space
+  if (mappages(pagetable, USYSCALL, PGSIZE,
+              (uint64)(p->usyscall), PTE_R | PTE_U) < 0) {
+    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    uvmunmap(pagetable, TRAPFRAME, 1, 0);
+    uvmfree(pagetable, 0);
+    return 0;
+  }
+
   return pagetable;
 }
 
@@ -204,6 +255,7 @@ proc_pagetable(struct proc *p)
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
+  uvmunmap(pagetable, USYSCALL, 1, 0);
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);

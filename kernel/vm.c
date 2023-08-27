@@ -432,3 +432,39 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+// start_addr stands for the first address of user pagetable
+// the start_addr issupposed to be page-aligned
+// num_of_pages is the numbers of pagetables to be checked
+// bitmask is the virtual address for a bitmask in user space
+int pgaccess(pagetable_t pagetable, uint64 start_addr, int num_of_pages, uint64 bitmask) {
+  // each process has its own pagetable
+  // pass the pagetable of a specified process
+  // with the virtual address of the pagetable
+  if (num_of_pages > 64) {
+    panic("pgaccess: too much pages");
+    return -1;
+  }
+  unsigned int m_bitmask = 0;
+  int cur_bitmask = 1;
+  int count = 0;
+  // start_addr is the starting virtual address
+  uint64 va = start_addr;
+  pte_t *pte;
+  // check destinated numbers of pagetables starting from start_addr
+  for (; count < num_of_pages; count++, va += PGSIZE) {
+    // get pte of the virtual address va
+    if ((pte = walk(pagetable, va, 0)) == 0)
+      panic("pgaccess: pte should exist");
+    // check if the memory has been accessed
+    if ((*pte & PTE_A)) {
+      // update bitmask if accessed
+      m_bitmask |= (cur_bitmask<<count);
+      // unset the PTE_A bit
+      *pte &= ~PTE_A;
+    }
+  }
+  // copyout the kernel space bitmask back to user space
+  copyout(pagetable, bitmask, (char*)&m_bitmask, sizeof(m_bitmask));
+  return 0;
+}

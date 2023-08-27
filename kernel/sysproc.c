@@ -81,6 +81,22 @@ int
 sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
+  uint64 start_addr;
+  if (argaddr(0, &start_addr) < 0) {
+    return -1;
+  }
+  int num_of_pages;
+  if (argint(1, &num_of_pages) < 0) {
+    return -1;
+  }
+  uint64 bitmask;
+  if (argaddr(2, &bitmask) < 0) {
+    return -1;
+  }
+  // pass paramters to pgaccess in vm.c
+  if (pgaccess(myproc()->pagetable, start_addr, num_of_pages, bitmask) < 0) {
+    return -1;
+  }
   return 0;
 }
 #endif
