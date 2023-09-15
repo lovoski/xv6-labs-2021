@@ -85,6 +85,7 @@ usertrap(void)
       if (--p->alarm_ticks <= 0) {
         if (!p->alarm_goingoff) {
           p->alarm_ticks = p->alarm_interval; // reset alarm_ticks to default intervals
+          *p->alarm_trapframe = *p->trapframe;
           p->trapframe->epc = (uint64)p->alarm_handler; // update pc to execute alarm_handler
           p->alarm_goingoff = 1;
         }
