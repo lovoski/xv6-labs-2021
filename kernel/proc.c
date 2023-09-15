@@ -127,6 +127,14 @@ found:
     return 0;
   }
 
+  // Allocate a trapframe page for alarm_trapframe
+  // Storing the trapframe before interupt
+  if((p->alarm_trapframe = (struct trapframe *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -150,9 +158,15 @@ found:
 static void
 freeproc(struct proc *p)
 {
+  // Free trapframe
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  // Free alarm_trapframe
+  if(p->alarm_trapframe)
+    kfree((void*)p->alarm_trapframe);
+  p->alarm_trapframe = 0;
+
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
