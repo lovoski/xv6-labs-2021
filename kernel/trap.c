@@ -81,12 +81,17 @@ usertrap(void)
   //   yield();
 
   if (which_dev == 2) {
+    // alarm interval is set
     if (p->alarm_interval != 0) {
       if (--p->alarm_ticks <= 0) {
+        // alarm is on
         if (!p->alarm_goingoff) {
           p->alarm_ticks = p->alarm_interval; // reset alarm_ticks to default intervals
+          // save trapframe state
           *p->alarm_trapframe = *p->trapframe;
+          // save epc to call bakc handler
           p->trapframe->epc = (uint64)p->alarm_handler; // update pc to execute alarm_handler
+          // turn off alarm
           p->alarm_goingoff = 1;
         }
       }
@@ -244,6 +249,8 @@ int sigalarm(int ticks, void(*handler)())
 
 int sigreturn()
 {
+  // the last line of handler callback function 
+  // should be this syscall
   // restore trapframe status to former condition
   struct proc *p = myproc();
   // restore trapframe
