@@ -1,0 +1,13 @@
+insert 中含有下面的代码：
+e->key = key;
+e->value = value;
+e->next = n;
+*p = e;
+
+由于在调用 put 的时候首先把 key 按照余数
+分配到数量有限的 bucket 中
+
+当两个线程被分配到同一个 bucket 中时
+如果一个线程刚刚完成对 bucket 的头的修改
+另外一个线程紧跟着把同一个 bucket 的头设置为自己新添加的 entry
+会导致首先修改 bucket 头的 entry 丢失

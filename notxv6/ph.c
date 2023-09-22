@@ -16,7 +16,8 @@ struct entry {
 struct entry *table[NBUCKET];
 int keys[NKEYS];
 int nthread = 1;
-
+// insert lock per bucket
+pthread_mutex_t locks[NBUCKET];
 
 double
 now()
@@ -26,6 +27,7 @@ now()
  return tv.tv_sec + tv.tv_usec / 1000000.0;
 }
 
+// insert to the head of a bucket
 static void 
 insert(int key, int value, struct entry **p, struct entry *n)
 {
@@ -36,6 +38,10 @@ insert(int key, int value, struct entry **p, struct entry *n)
   *p = e;
 }
 
+// hash the key to existing buckets
+// check if the key exists
+// if not, insert to the head of the bucket
+// if exists, update existing entry
 static 
 void put(int key, int value)
 {
@@ -52,7 +58,9 @@ void put(int key, int value)
     e->value = value;
   } else {
     // the new is new.
+    pthread_mutex_lock(&locks[i]);
     insert(key, value, &table[i], table[i]);
+    pthread_mutex_unlock(&locks[i]);
   }
 
 }
@@ -105,6 +113,9 @@ main(int argc, char *argv[])
   void *value;
   double t1, t0;
 
+  // intialize insert lock
+  for (int i = 0; i < NBUCKET; ++i)
+    pthread_mutex_init(&locks[i], NULL);
 
   if (argc < 2) {
     fprintf(stderr, "Usage: %s nthreads\n", argv[0]);
