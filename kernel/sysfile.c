@@ -283,6 +283,9 @@ create(char *path, short type, short major, short minor)
   return ip;
 }
 
+// Modify `open` to handle the flag O_NOFOLLOW
+// When the flag is on, open the symlink file itself
+// Rather than the original file
 uint64
 sys_open(void)
 {
@@ -308,6 +311,25 @@ sys_open(void)
       end_op();
       return -1;
     }
+
+    // Unresolve the link
+    int depth = 11;
+    while (depth--) {
+      // The file should be a symlink
+      if (ip->type == T_SYMLINK && (omode & O_NOFOLLOW) == 0) {
+        // If the file should be opened with nofollow flag
+        if (depth == 0) {
+          end_op();
+          return -1;
+        }
+        // Get inode address of the symlink
+        if ((ip = namei(ip->symlink)) == 0) {
+          end_op();
+          return -1;
+        }
+      } else break;
+    }
+
     ilock(ip);
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
@@ -482,5 +504,29 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+// Creates a symlink
+// The `target` param can be null
+uint64
+sys_symlink(void)
+{
+  char target[MAXPATH], path[MAXPATH];
+  if (argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0) {
+    return -1;
+  }
+
+  struct inode *ip;
+  begin_op();
+
+  if ((ip = create(path, T_SYMLINK, 0, 0)) == 0) {
+    end_op();
+    return -1;
+  }
+  strncpy(ip->symlink, target, MAXPATH);
+  iunlockput(ip);
+
+  end_op();
   return 0;
 }
