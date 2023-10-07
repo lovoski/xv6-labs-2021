@@ -377,9 +377,12 @@ iunlockput(struct inode *ip)
 static uint
 bmap(struct inode *ip, uint bn)
 {
+  // `bn` stands for the logical block number
   uint addr, *a;
   struct buf *bp;
 
+  // if the logical block number in direct range
+  // allocate the block or returns the block address
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0)
       ip->addrs[bn] = addr = balloc(ip->dev);
@@ -395,6 +398,28 @@ bmap(struct inode *ip, uint bn)
     a = (uint*)bp->data;
     if((addr = a[bn]) == 0){
       a[bn] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    return addr;
+  }
+  bn -= NINDIRECT;
+
+  if (bn < NININDIRECT) {
+    if ((addr = ip->addrs[NDIRECT+1]) == 0) {
+      ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
+    }
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+    if((addr = a[bn/NINDIRECT]) == 0){
+      a[bn/NINDIRECT] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+    if ((addr = a[bn%NINDIRECT]) == 0) {
+      a[bn%NINDIRECT] = addr = balloc(ip->dev);
       log_write(bp);
     }
     brelse(bp);
@@ -430,6 +455,28 @@ itrunc(struct inode *ip)
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  if (ip->addrs[NINDIRECT+1]) {
+    bp = bread(ip->dev, ip->addrs[NDIRECT+1]);
+    a = (uint*)bp->data;
+    struct buf *nbp;
+    uint *na;
+    for (i = 0; i < NINDIRECT; ++i) {
+      if (a[i]) {
+        nbp = bread(ip->dev, a[i]);
+        na = (uint*)nbp->data;
+        for (j = 0; j < NINDIRECT; ++j) {
+          if (na[j]) {
+            bfree(ip->dev, na[j]);
+          }
+        }
+        brelse(nbp);
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT+1]);
+    ip->addrs[NDIRECT+1] = 0;
   }
 
   ip->size = 0;
