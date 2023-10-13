@@ -67,6 +67,8 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if (which_dev == 0 && (uint64)r_scause() == 13) {
+    if (pgfault(PGROUNDDOWN(r_stval())) == -1) p->killed = 1;
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

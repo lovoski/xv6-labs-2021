@@ -484,3 +484,171 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_mmap(void)
+{
+  uint64 va;
+  int len, prot, flags, fd, off;
+  if (argaddr(0, &va) < 0 || argint(1, &len) < 0 || 
+  argint(2, &prot) < 0 || argint(3, &flags) < 0
+  || argint(4, &fd) < 0 || argint(5, &off) < 0) {
+    return -1;
+  }
+
+  struct proc *p = myproc();
+  if (len <= 0) return -1;
+  // the opened file don't exists
+  if (p->ofile[fd] == 0) return -1;
+  else filedup(p->ofile[fd]);
+  if (p->ofile[fd]->writable == 0 
+      && (prot & PROT_WRITE) == PROT_WRITE
+      && (flags & MAP_SHARED) == MAP_SHARED) return -1;
+  // alloc vma
+  int i;
+  for (i = 0; i < NMAXVMA; ++i) {
+    if (p->vma[i].valid == 0) {
+      p->vma[i].valid = 1;
+      break;
+    }
+  }
+  // no free space
+  if (i == NMAXVMA) return -1;
+
+  p->vma[i].va = p->curend - len;
+  p->curend = p->vma[i].va;
+  p->vma[i].len = len;
+  uint pteflags = 0;
+  if ((prot & PROT_READ) == PROT_READ) pteflags |= PTE_R;
+  if ((prot & PROT_WRITE) == PROT_WRITE) pteflags |= PTE_W;
+  p->vma[i].prot = pteflags;
+  p->vma[i].flags = flags;
+  p->vma[i].fd = fd;
+  p->vma[i].off = off;
+  p->vma[i].f = p->ofile[fd];
+
+  return (uint64)p->vma[i].va;
+}
+
+uint64
+sys_munmap(void)
+{
+  uint64 va;
+  int len;
+
+  if (argaddr(0, &va) < 0) return -1;
+  if (argint(1, &len) < 0) return -1;
+  if (subunmap(va, len) == -1) return  -1;
+  return 0;
+}
+
+// Once page falut happens
+// Find the corresponding vma of va
+// Read file from inode, copy to va
+uint64
+pgfault(uint64 va)
+{
+  struct proc *p = myproc();
+  struct vma_t *v = 0;
+  // find corresponding vma
+  for (int i = 0; i < NMAXVMA; ++i) {
+    if (p->vma[i].valid == 1 && p->vma[i].va <= va
+        && va <= p->vma[i].va + p->vma[i].len) {
+          // assign the vma found to v
+          v = &p->vma[i];
+          break;
+        }
+  }
+  // vma not found
+  if (v == 0) return -1;
+
+  // alloc one page
+  uint64 pa = (uint64)kalloc();
+  if (pa == 0) return -1;
+  memset((char*)pa, 0, PGSIZE);
+
+  // readi will read data from inode and ouput the data to va
+  // map va to pa
+  if (mappages(p->pagetable, va, PGSIZE, pa, v->prot|PTE_U) == -1) {
+    kfree((void*)pa);
+    return -1;
+  }
+  // write inode data to va
+  ilock(v->f->ip);
+  // read data from inode, copy to va
+  int ret = readi(v->f->ip, 1, va, v->off+va-v->va, PGSIZE);
+  if (ret == -1) {
+    kfree((void*)pa);
+    iunlock(v->f->ip);
+    return -1;
+  }
+  iunlock(v->f->ip);
+  return 0;
+}
+
+uint64
+subunmap(uint64 va, int len)
+{
+  if (len == 0) return 0;
+  struct proc *p = myproc();
+  struct vma_t *v = 0;
+  // find corresponding vma of va
+  for (int i = 0; i < NMAXVMA; ++i) {
+    if (p->vma[i].valid == 1 && p->vma[i].va <= va
+        && va <= p->vma[i].va + p->vma[i].len) {
+          v = &p->vma[i];
+          break;
+        }
+  }
+  if (v == 0) return -1;
+
+  va = PGROUNDDOWN(va);
+  // pte of the first release page
+  pte_t *pte = walk(p->pagetable, va, 0);
+  if (pte == 0) return -1;
+  // pte flags of the first release page
+  uint64 pteflags = PTE_FLAGS(*pte);
+  uint64 pa;
+  if ((pa = walkaddr(p->pagetable, va)) != 0) {
+    if (v->flags & MAP_SHARED) {
+      if ((pteflags & PTE_D) == PTE_D) {
+        int ret = filewrite(v->f, va, len);
+        if (ret == -1) return -1;
+      }
+    }
+    uvmunmap(p->pagetable, va, len/PGSIZE, 1);
+  }
+
+  if (v->va == va && v->len == len) {
+    v->len -= len;
+  } else if (v->va == va && v->len != len) {
+    v->va += len;
+    v->len -= len;
+  } else if (v->va != va && v->len == len) {
+  } else if (v->va != va && v->len != len) {
+    v->len -= len;
+  }
+
+  if (v->len == 0) {
+    // upmap the whole file
+    v->va = 0;
+    v->valid = 0;
+    fileclose(v->f);
+
+    // adjust curend
+    if (va == p->curend) {
+      p->curend += len;
+      for (uint64 unva = PGROUNDDOWN(p->curend);
+           unva < MAXVA - 2 * PGSIZE; unva += PGSIZE) {
+        int i;
+        for (i = 0; i < NMAXVMA; ++i) {
+          if (p->vma[i].va == unva && p->vma[i].valid == 1)
+            break;
+        }
+        if (i == NMAXVMA) p->curend += PGSIZE;
+        else break;
+      }
+    }
+  }
+  return 0;
+}
